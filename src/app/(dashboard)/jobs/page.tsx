@@ -91,6 +91,45 @@ export default function JobsPage() {
     setSaving(false)
   }
 
+  async function generateInvoice(job: JobWithContact) {
+    const supabase = createClient()
+    const labels: Record<string, string> = {
+      pressure_washing: 'Pressure Washing',
+      soft_washing: 'Soft Wash / House Wash',
+      window_cleaning: 'Window Cleaning',
+    }
+    const priceEach = job.total_price / (job.services.length || 1)
+    const lineItems = job.services.map(s => ({
+      id: crypto.randomUUID(),
+      service_type: s,
+      description: labels[s] ?? s,
+      unit_price: priceEach,
+      total: priceEach,
+    }))
+    const { data: inv } = await supabase.from('invoices').insert({
+      job_id: job.id,
+      contact_id: job.contact_id,
+      line_items: lineItems,
+      subtotal: job.total_price,
+      bundle_discount: 0,
+      discount_amount: 0,
+      total: job.total_price,
+      payment_method: 'unpaid',
+      payment_status: 'unpaid',
+      paid_at: null,
+      stripe_payment_intent_id: null,
+      email_sent: false,
+      email_sent_at: null,
+      completed_date: job.completed_at?.slice(0, 10) ?? job.scheduled_date,
+    }).select('id').single()
+    if (inv) {
+      await supabase.from('jobs').update({ invoice_id: inv.id }).eq('id', job.id)
+      const updated = { ...job, invoice_id: inv.id }
+      setJobs(prev => prev.map(j => j.id === job.id ? updated : j))
+      setSelected(updated)
+    }
+  }
+
   async function updateStatus(job: JobWithContact, status: Job['status']) {
     const supabase = createClient()
     const updates: Partial<Job> = { status }
@@ -99,6 +138,7 @@ export default function JobsPage() {
     const updated = { ...job, ...updates }
     setJobs(prev => prev.map(j => j.id === job.id ? updated : j))
     setSelected(updated)
+    if (status === 'completed') await generateInvoice(updated)
   }
 
   const filtered = jobs.filter(j => filter === 'all' || j.status === filter)
@@ -215,6 +255,17 @@ export default function JobsPage() {
                 className="w-full py-2.5 rounded-xl text-sm font-medium bg-green-600 hover:bg-green-700 text-white transition-colors">
                 <CheckCircle size={14} className="inline mr-1" />Mark Complete
               </button>
+            )}
+            {selected.status === 'completed' && !selected.invoice_id && (
+              <button onClick={() => generateInvoice(selected)}
+                className="w-full py-2.5 rounded-xl text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors">
+                <FileText size={14} className="inline mr-1" />Generate Invoice
+              </button>
+            )}
+            {selected.status === 'completed' && selected.invoice_id && (
+              <div className="flex items-center gap-2 text-sm text-green-400 py-1">
+                <CheckCircle size={14} />Invoice created — mark it paid in the Invoices tab
+              </div>
             )}
           </div>
         ) : (
