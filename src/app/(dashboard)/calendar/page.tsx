@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, Clock, MapPin, Copy } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clock, MapPin, Copy, Pencil, Check, X } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, parseISO } from 'date-fns'
 import { formatCurrency, formatTime, applyTextTemplate } from '@/lib/utils'
 import { TEXT_TEMPLATES } from '@/lib/constants'
@@ -22,6 +22,9 @@ export default function CalendarPage() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [jobs, setJobs] = useState<CalJob[]>([])
   const [copiedTemplate, setCopiedTemplate] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({ scheduled_date: '', arrival_time: '' })
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     const supabase = createClient()
@@ -35,6 +38,15 @@ export default function CalendarPage() {
 
   const jobsOnDate = (date: Date) => jobs.filter(j => j.scheduled_date === format(date, 'yyyy-MM-dd'))
   const selectedJobs = selectedDate ? jobsOnDate(selectedDate) : []
+
+  async function saveEdit(job: CalJob) {
+    setSaving(true)
+    const supabase = createClient()
+    await supabase.from('jobs').update({ scheduled_date: editForm.scheduled_date, arrival_time: editForm.arrival_time }).eq('id', job.id)
+    setJobs(prev => prev.map(j => j.id === job.id ? { ...j, scheduled_date: editForm.scheduled_date, arrival_time: editForm.arrival_time } : j))
+    setEditingId(null)
+    setSaving(false)
+  }
 
   const copyTemplate = (template: string, job: CalJob) => {
     const name = job.contacts ? job.contacts.first_name : 'Customer'
@@ -103,7 +115,33 @@ export default function CalendarPage() {
               {selectedJobs.length === 0 && <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>No jobs scheduled</div>}
               {selectedJobs.map(job => (
                 <div key={job.id} className="rounded-xl p-3 space-y-2" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                  <div className="font-medium text-sm">{job.contacts ? `${job.contacts.first_name} ${job.contacts.last_name}` : 'Job'}</div>
+                  <div className="flex items-center justify-between">
+                    <div className="font-medium text-sm">{job.contacts ? `${job.contacts.first_name} ${job.contacts.last_name}` : 'Job'}</div>
+                    {job.status !== 'completed' && editingId !== job.id && (
+                      <button onClick={() => { setEditingId(job.id); setEditForm({ scheduled_date: job.scheduled_date, arrival_time: job.arrival_time }) }}
+                        className="p-1 rounded hover:bg-white/10 transition-colors" style={{ color: 'var(--text-secondary)' }}>
+                        <Pencil size={12} />
+                      </button>
+                    )}
+                  </div>
+                  {editingId === job.id ? (
+                    <div className="space-y-2">
+                      <input type="date" value={editForm.scheduled_date} onChange={e => setEditForm(p => ({ ...p, scheduled_date: e.target.value }))} />
+                      <input type="time" value={editForm.arrival_time} onChange={e => setEditForm(p => ({ ...p, arrival_time: e.target.value }))} />
+                      <div className="flex gap-2">
+                        <button onClick={() => saveEdit(job)} disabled={saving}
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50">
+                          <Check size={11} />{saving ? 'Saving…' : 'Save'}
+                        </button>
+                        <button onClick={() => setEditingId(null)}
+                          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs hover:bg-white/5"
+                          style={{ border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                          <X size={11} />Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
                   <div className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
                     <Clock size={10} />{formatTime(job.arrival_time)}
                   </div>
@@ -114,21 +152,25 @@ export default function CalendarPage() {
                     <a href={`tel:${job.contacts.phone}`} className="text-xs text-blue-400">{job.contacts.phone}</a>
                   )}
                   <div className="text-sm font-semibold text-blue-400">{formatCurrency(job.total_price)}</div>
-                  <div className="border-t pt-2 space-y-1.5" style={{ borderColor: 'var(--border)' }}>
-                    <div className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Text Templates</div>
-                    {[
-                      { key: 'booking_confirmation', label: 'Booking Confirmation', template: TEXT_TEMPLATES.booking_confirmation },
-                      { key: 'day_before_reminder', label: 'Day Before Reminder', template: TEXT_TEMPLATES.day_before_reminder },
-                      { key: 'morning_of', label: 'Morning Of', template: TEXT_TEMPLATES.morning_of },
-                    ].map(t => (
-                      <button key={t.key} onClick={() => copyTemplate(t.template, job)}
-                        className="w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-white/5 transition-colors"
-                        style={{ border: '1px solid var(--border)', color: copiedTemplate === t.template ? '#22c55e' : 'var(--text-secondary)' }}>
-                        <span>{t.label}</span>
-                        <Copy size={10} />
-                      </button>
-                    ))}
-                  </div>
+                    </>
+                  )}
+                  {editingId !== job.id && (
+                    <div className="border-t pt-2 space-y-1.5" style={{ borderColor: 'var(--border)' }}>
+                      <div className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Text Templates</div>
+                      {[
+                        { key: 'booking_confirmation', label: 'Booking Confirmation', template: TEXT_TEMPLATES.booking_confirmation },
+                        { key: 'day_before_reminder', label: 'Day Before Reminder', template: TEXT_TEMPLATES.day_before_reminder },
+                        { key: 'morning_of', label: 'Morning Of', template: TEXT_TEMPLATES.morning_of },
+                      ].map(t => (
+                        <button key={t.key} onClick={() => copyTemplate(t.template, job)}
+                          className="w-full flex items-center justify-between px-2 py-1.5 rounded text-xs hover:bg-white/5 transition-colors"
+                          style={{ border: '1px solid var(--border)', color: copiedTemplate === t.template ? '#22c55e' : 'var(--text-secondary)' }}>
+                          <span>{t.label}</span>
+                          <Copy size={10} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </>

@@ -135,8 +135,28 @@ export default function JobsPage() {
     const updates: Partial<Job> = { status }
     if (status === 'completed') {
       updates.completed_at = new Date().toISOString()
-      const { data: contact } = await supabase.from('contacts').select('job_count').eq('id', job.contact_id).single()
-      if (contact) await supabase.from('contacts').update({ job_count: (contact.job_count ?? 0) + 1 }).eq('id', job.contact_id)
+      const { data: contact } = await supabase.from('contacts').select('job_count, recurring_frequency, next_service_date').eq('id', job.contact_id).single()
+      if (contact) {
+        await supabase.from('contacts').update({ job_count: (contact.job_count ?? 0) + 1 }).eq('id', job.contact_id)
+        if (contact.recurring_frequency !== 'one_time' && contact.next_service_date) {
+          const { data: nextJob } = await supabase.from('jobs').insert({
+            contact_id: job.contact_id,
+            address: job.address,
+            city: job.city,
+            state: job.state,
+            zip: job.zip,
+            scheduled_date: contact.next_service_date,
+            arrival_time: job.arrival_time,
+            services: job.services,
+            total_price: job.total_price,
+            notes: job.notes,
+            status: 'scheduled',
+            lead_id: job.lead_id,
+            quote_id: job.quote_id,
+          }).select('*, contacts(first_name, last_name)').single()
+          if (nextJob) setJobs(prev => [nextJob as JobWithContact, ...prev])
+        }
+      }
     }
     await supabase.from('jobs').update(updates).eq('id', job.id)
     const updated = { ...job, ...updates }
