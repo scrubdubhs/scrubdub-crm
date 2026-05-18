@@ -37,6 +37,8 @@ export default function InvoicesPage() {
     const supabase = createClient()
     const updates = { payment_method: method, payment_status: 'paid' as const, paid_at: new Date().toISOString() }
     await supabase.from('invoices').update(updates).eq('id', selected.id)
+    const { data: contact } = await supabase.from('contacts').select('total_spent').eq('id', selected.contact_id).single()
+    if (contact) await supabase.from('contacts').update({ total_spent: (contact.total_spent ?? 0) + selected.total }).eq('id', selected.contact_id)
     const updated = { ...selected, ...updates }
     setInvoices(prev => prev.map(i => i.id === selected.id ? updated : i))
     setSelected(updated)

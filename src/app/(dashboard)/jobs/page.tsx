@@ -133,7 +133,11 @@ export default function JobsPage() {
   async function updateStatus(job: JobWithContact, status: Job['status']) {
     const supabase = createClient()
     const updates: Partial<Job> = { status }
-    if (status === 'completed') updates.completed_at = new Date().toISOString()
+    if (status === 'completed') {
+      updates.completed_at = new Date().toISOString()
+      const { data: contact } = await supabase.from('contacts').select('job_count').eq('id', job.contact_id).single()
+      if (contact) await supabase.from('contacts').update({ job_count: (contact.job_count ?? 0) + 1 }).eq('id', job.contact_id)
+    }
     await supabase.from('jobs').update(updates).eq('id', job.id)
     const updated = { ...job, ...updates }
     setJobs(prev => prev.map(j => j.id === job.id ? updated : j))
