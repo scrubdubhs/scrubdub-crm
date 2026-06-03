@@ -28,9 +28,26 @@ export default function CalendarPage() {
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.from('jobs').select('id, scheduled_date, arrival_time, address, total_price, status, services, contacts(first_name, last_name, phone)')
-      .neq('status', 'cancelled')
-      .then(({ data }) => { if (data) setJobs(data as unknown as CalJob[]) })
+    async function loadAndSync() {
+      const today = new Date().toISOString().slice(0, 10)
+      const { data: contacts } = await supabase.from('contacts').select('id, address, city, state, zip, recurring_frequency, next_service_date').neq('recurring_frequency', 'one_time')
+      if (contacts) {
+        for (const c of contacts) {
+          if (!c.next_service_date || c.next_service_date <= today) continue
+          const { data: fut } = await supabase.from('jobs').select('id').eq('contact_id', c.id).eq('status', 'scheduled').gt('scheduled_date', today).limit(1)
+          if (!fut || fut.length === 0) {
+            await supabase.from('jobs').insert({
+              contact_id: c.id, address: c.address, city: c.city, state: c.state, zip: c.zip,
+              scheduled_date: c.next_service_date, arrival_time: '09:00',
+              services: [], total_price: 0, status: 'scheduled', notes: null,
+            })
+          }
+        }
+      }
+      const { data } = await supabase.from('jobs').select('id, scheduled_date, arrival_time, address, total_price, status, services, contacts(first_name, last_name, phone)').neq('status', 'cancelled')
+      if (data) setJobs(data as unknown as CalJob[])
+    }
+    loadAndSync()
   }, [])
 
   const days = eachDayOfInterval({ start: startOfMonth(currentMonth), end: endOfMonth(currentMonth) })
