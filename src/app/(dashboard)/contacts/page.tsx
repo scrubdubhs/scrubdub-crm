@@ -41,8 +41,22 @@ export default function ContactsPage() {
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.from('contacts').select('*').order('first_name').then(({ data }) => {
-      if (data) setContacts(data as Contact[])
+    supabase.from('contacts').select('*').order('first_name').then(async ({ data }) => {
+      if (data) {
+        setContacts(data as Contact[])
+        const today = new Date().toISOString().slice(0, 10)
+        const recurring = (data as Contact[]).filter(c => c.recurring_frequency !== 'one_time' && c.next_service_date && c.next_service_date > today)
+        for (const c of recurring) {
+          const { data: fut } = await supabase.from('jobs').select('id').eq('contact_id', c.id).eq('status', 'scheduled').gt('scheduled_date', today).limit(1)
+          if (!fut || fut.length === 0) {
+            await supabase.from('jobs').insert({
+              contact_id: c.id, address: c.address, city: c.city, state: c.state, zip: c.zip,
+              scheduled_date: c.next_service_date, arrival_time: '09:00',
+              services: [], total_price: 0, status: 'scheduled', notes: null,
+            })
+          }
+        }
+      }
       setLoading(false)
     })
   }, [])
@@ -61,7 +75,7 @@ export default function ContactsPage() {
           contact_id: (data as Contact).id,
           address: form.address, city: form.city, state: form.state, zip: form.zip,
           scheduled_date: nextServiceDate, status: 'scheduled',
-          arrival_time: null, services: [], total_price: 0, notes: null,
+          arrival_time: '09:00', services: [], total_price: 0, notes: null,
         })
       }
       setContacts(prev => [...prev, data as Contact].sort((a, b) => a.first_name.localeCompare(b.first_name)))
@@ -120,7 +134,7 @@ export default function ContactsPage() {
           state: lastJob?.state ?? editForm.state,
           zip: lastJob?.zip ?? editForm.zip,
           scheduled_date: newNextServiceDate,
-          arrival_time: lastJob?.arrival_time ?? null,
+          arrival_time: lastJob?.arrival_time ?? '09:00',
           services: lastJob?.services ?? [],
           total_price: lastJob?.total_price ?? 0,
           notes: lastJob?.notes ?? null,
@@ -279,7 +293,11 @@ export default function ContactsPage() {
               <input placeholder="Email" value={editForm.email} onChange={e => setEditForm(p => ({ ...p, email: e.target.value }))} />
               <input placeholder="Address" className="col-span-2" value={editForm.address} onChange={e => setEditForm(p => ({ ...p, address: e.target.value }))} />
               <input placeholder="City" value={editForm.city} onChange={e => setEditForm(p => ({ ...p, city: e.target.value }))} />
-              <input placeholder="ZIP" value={editForm.zip} onChange={e => setEditForm(p => ({ ...p, zip: e.target.value }))} />
+              <select value={editForm.state} onChange={e => setEditForm(p => ({ ...p, state: e.target.value }))}>
+                <option value="MO">Missouri (MO)</option>
+                <option value="IL">Illinois (IL)</option>
+              </select>
+              <input placeholder="ZIP" className="col-span-2" value={editForm.zip} onChange={e => setEditForm(p => ({ ...p, zip: e.target.value }))} />
               <select className="col-span-2" value={editForm.recurring_frequency} onChange={e => setEditForm(p => ({ ...p, recurring_frequency: e.target.value as RecurringFrequency }))}>
                 <option value="one_time">One-Time</option>
                 <option value="quarterly">Quarterly Recurring</option>
@@ -347,7 +365,11 @@ export default function ContactsPage() {
               <input placeholder="Email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} />
               <input placeholder="Address" className="col-span-2" value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} />
               <input placeholder="City" value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} />
-              <input placeholder="ZIP" value={form.zip} onChange={e => setForm(p => ({ ...p, zip: e.target.value }))} />
+              <select value={form.state} onChange={e => setForm(p => ({ ...p, state: e.target.value }))}>
+                <option value="MO">Missouri (MO)</option>
+                <option value="IL">Illinois (IL)</option>
+              </select>
+              <input placeholder="ZIP" className="col-span-2" value={form.zip} onChange={e => setForm(p => ({ ...p, zip: e.target.value }))} />
               <select className="col-span-2" value={form.recurring_frequency} onChange={e => setForm(p => ({ ...p, recurring_frequency: e.target.value as RecurringFrequency }))}>
                 <option value="one_time">One-Time</option>
                 <option value="quarterly">Quarterly Recurring</option>
