@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Camera, CheckCircle, Clock, MapPin, FileText, Plus, X } from 'lucide-react'
+import { Camera, CheckCircle, Clock, MapPin, FileText, Plus, X, Pencil, Check } from 'lucide-react'
 import { formatDate, formatTime, formatCurrency } from '@/lib/utils'
 import { createClient } from '@/lib/supabase-browser'
 import type { Job, Contact, RecurringFrequency } from '@/lib/types'
@@ -22,10 +22,10 @@ function nextServiceDate(from: string, freq: RecurringFrequency): string | null 
 }
 
 const STATUS_STYLES = {
-  scheduled: 'bg-indigo-500/20 text-indigo-300',
-  in_progress: 'bg-cyan-500/20 text-cyan-300',
-  completed: 'bg-green-500/20 text-green-300',
-  cancelled: 'bg-red-500/20 text-red-300',
+  scheduled: 'bg-indigo-500/30 text-indigo-200',
+  in_progress: 'bg-cyan-500/30 text-cyan-200',
+  completed: 'bg-green-500/30 text-green-200',
+  cancelled: 'bg-red-500/30 text-red-200',
 }
 
 type JobWithContact = Job & { contacts: { first_name: string; last_name: string } | null }
@@ -38,6 +38,9 @@ export default function JobsPage() {
   const [showBook, setShowBook] = useState(false)
   const [contacts, setContacts] = useState<Contact[]>([])
   const [saving, setSaving] = useState(false)
+  const [rescheduleId, setRescheduleId] = useState<string | null>(null)
+  const [rescheduleForm, setRescheduleForm] = useState({ scheduled_date: '', arrival_time: '' })
+  const [rescheduleSaving, setRescheduleSaving] = useState(false)
   const [bookForm, setBookForm] = useState({
     contact_id: '',
     address: '',
@@ -63,6 +66,18 @@ export default function JobsPage() {
       if (data) setContacts(data as Contact[])
     })
   }, [])
+
+  async function saveReschedule(job: JobWithContact) {
+    if (!rescheduleForm.scheduled_date || !rescheduleForm.arrival_time) return
+    setRescheduleSaving(true)
+    const supabase = createClient()
+    await supabase.from('jobs').update({ scheduled_date: rescheduleForm.scheduled_date, arrival_time: rescheduleForm.arrival_time }).eq('id', job.id)
+    const updated = { ...job, scheduled_date: rescheduleForm.scheduled_date, arrival_time: rescheduleForm.arrival_time }
+    setJobs(prev => prev.map(j => j.id === job.id ? updated : j))
+    setSelected(updated)
+    setRescheduleId(null)
+    setRescheduleSaving(false)
+  }
 
   async function saveJob() {
     if (!bookForm.contact_id || !bookForm.scheduled_date || !bookForm.arrival_time || bookForm.services.length === 0 || !bookForm.total_price) return
@@ -138,23 +153,29 @@ export default function JobsPage() {
       const { data: contact } = await supabase.from('contacts').select('job_count, recurring_frequency, next_service_date').eq('id', job.contact_id).single()
       if (contact) {
         await supabase.from('contacts').update({ job_count: (contact.job_count ?? 0) + 1 }).eq('id', job.contact_id)
-        if (contact.recurring_frequency !== 'one_time' && contact.next_service_date) {
-          const { data: nextJob } = await supabase.from('jobs').insert({
-            contact_id: job.contact_id,
-            address: job.address,
-            city: job.city,
-            state: job.state,
-            zip: job.zip,
-            scheduled_date: contact.next_service_date,
-            arrival_time: job.arrival_time,
-            services: job.services,
-            total_price: job.total_price,
-            notes: job.notes,
-            status: 'scheduled',
-            lead_id: job.lead_id,
-            quote_id: job.quote_id,
-          }).select('*, contacts(first_name, last_name)').single()
-          if (nextJob) setJobs(prev => [nextJob as JobWithContact, ...prev])
+        if (contact.recurring_frequency !== 'one_time') {
+          const nextDate = contact.next_service_date ?? nextServiceDate(job.scheduled_date, contact.recurring_frequency)
+          if (nextDate) {
+            const { data: nextJob } = await supabase.from('jobs').insert({
+              contact_id: job.contact_id,
+              address: job.address,
+              city: job.city,
+              state: job.state,
+              zip: job.zip,
+              scheduled_date: nextDate,
+              arrival_time: job.arrival_time,
+              services: job.services,
+              total_price: job.total_price,
+              notes: job.notes,
+              status: 'scheduled',
+              lead_id: job.lead_id ?? null,
+              quote_id: job.quote_id ?? null,
+            }).select('*, contacts(first_name, last_name)').single()
+            if (nextJob) setJobs(prev => [nextJob as JobWithContact, ...prev])
+            await supabase.from('contacts').update({
+              next_service_date: nextServiceDate(nextDate, contact.recurring_frequency),
+            }).eq('id', job.contact_id)
+          }
         }
       }
     }
@@ -233,9 +254,37 @@ export default function JobsPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl p-3" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Scheduled</div>
-                <div className="font-medium mt-0.5">{formatDate(selected.scheduled_date)}</div>
-                <div className="text-sm text-blue-400">{formatTime(selected.arrival_time)}</div>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Scheduled</div>
+                  {selected.status === 'scheduled' && rescheduleId !== selected.id && (
+                    <button onClick={() => { setRescheduleId(selected.id); setRescheduleForm({ scheduled_date: selected.scheduled_date, arrival_time: selected.arrival_time }) }}
+                      className="p-1 rounded hover:bg-white/10 transition-colors" style={{ color: 'var(--text-secondary)' }}>
+                      <Pencil size={11} />
+                    </button>
+                  )}
+                </div>
+                {rescheduleId === selected.id ? (
+                  <div className="space-y-1.5 mt-1.5">
+                    <input type="date" value={rescheduleForm.scheduled_date} onChange={e => setRescheduleForm(p => ({ ...p, scheduled_date: e.target.value }))} />
+                    <input type="time" value={rescheduleForm.arrival_time} onChange={e => setRescheduleForm(p => ({ ...p, arrival_time: e.target.value }))} />
+                    <div className="flex gap-1.5">
+                      <button onClick={() => saveReschedule(selected)} disabled={rescheduleSaving}
+                        className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50">
+                        <Check size={10} />{rescheduleSaving ? 'Saving…' : 'Save'}
+                      </button>
+                      <button onClick={() => setRescheduleId(null)}
+                        className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs hover:bg-white/5"
+                        style={{ border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                        <X size={10} />Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="font-medium mt-0.5">{formatDate(selected.scheduled_date)}</div>
+                    <div className="text-sm text-blue-400">{formatTime(selected.arrival_time)}</div>
+                  </>
+                )}
               </div>
               <div className="rounded-xl p-3" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
                 <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Services</div>
@@ -400,7 +449,7 @@ function PhotoSection({ label, photos }: { label: string; photos: string[] }) {
     <div>
       <div className="text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>{label}</div>
       <label className="block cursor-pointer">
-        <input type="file" accept="image/*" capture="environment" className="hidden" multiple />
+        <input type="file" accept="image/*" className="hidden" multiple />
         <div className="border-2 border-dashed rounded-xl p-4 text-center hover:border-blue-500/50 transition-colors"
           style={{ borderColor: 'var(--border)' }}>
           {photos.length > 0 ? (

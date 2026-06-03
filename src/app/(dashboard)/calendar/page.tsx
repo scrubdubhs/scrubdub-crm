@@ -44,6 +44,7 @@ export default function CalendarPage() {
     const supabase = createClient()
     await supabase.from('jobs').update({ scheduled_date: editForm.scheduled_date, arrival_time: editForm.arrival_time }).eq('id', job.id)
     setJobs(prev => prev.map(j => j.id === job.id ? { ...j, scheduled_date: editForm.scheduled_date, arrival_time: editForm.arrival_time } : j))
+    setSelectedDate(parseISO(editForm.scheduled_date))
     setEditingId(null)
     setSaving(false)
   }
@@ -97,7 +98,7 @@ export default function CalendarPage() {
                   </div>
                   <div className="mt-1 space-y-0.5">
                     {dayJobs.map(j => (
-                      <div key={j.id} className={`text-xs px-1 py-0.5 rounded truncate ${j.status === 'completed' ? 'bg-green-500/20 text-green-300' : 'bg-blue-500/20 text-blue-300'}`}>
+                      <div key={j.id} className={`text-xs px-1 py-0.5 rounded truncate ${j.status === 'completed' ? 'bg-green-500/30 text-green-200' : 'bg-blue-500/30 text-blue-200'}`}>
                         {formatTime(j.arrival_time)} {j.contacts?.first_name ?? 'Job'}
                       </div>
                     ))}
