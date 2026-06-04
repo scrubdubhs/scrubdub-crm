@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Camera, CheckCircle, Clock, MapPin, FileText, Plus, X, Pencil, Check } from 'lucide-react'
+import { Camera, CheckCircle, Clock, MapPin, FileText, Plus, X, Pencil, Check, Search, Ban } from 'lucide-react'
 import { formatDate, formatTime, formatCurrency } from '@/lib/utils'
 import { createClient } from '@/lib/supabase-browser'
 import type { Job, Contact, RecurringFrequency } from '@/lib/types'
@@ -41,6 +41,8 @@ export default function JobsPage() {
   const [rescheduleId, setRescheduleId] = useState<string | null>(null)
   const [rescheduleForm, setRescheduleForm] = useState({ scheduled_date: '', arrival_time: '' })
   const [rescheduleSaving, setRescheduleSaving] = useState(false)
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  const [contactSearch, setContactSearch] = useState('')
   const [bookForm, setBookForm] = useState({
     contact_id: '',
     address: '',
@@ -104,6 +106,15 @@ export default function JobsPage() {
     setShowBook(false)
     setBookForm({ contact_id: '', address: '', city: '', state: 'MO', zip: '', scheduled_date: '', arrival_time: '', services: [], total_price: '', notes: '', recurring_frequency: 'one_time' })
     setSaving(false)
+  }
+
+  async function cancelJob(job: JobWithContact) {
+    const supabase = createClient()
+    await supabase.from('jobs').update({ status: 'cancelled' }).eq('id', job.id)
+    const updated = { ...job, status: 'cancelled' as Job['status'] }
+    setJobs(prev => prev.map(j => j.id === job.id ? updated : j))
+    setSelected(updated)
+    setConfirmCancel(false)
   }
 
   async function generateInvoice(job: JobWithContact) {
@@ -219,7 +230,7 @@ export default function JobsPage() {
           ) : filtered.length === 0 ? (
             <div className="p-4 text-center text-sm" style={{ color: 'var(--text-secondary)' }}>No jobs</div>
           ) : filtered.map(job => (
-            <button key={job.id} onClick={() => setSelected(job)}
+            <button key={job.id} onClick={() => { setSelected(job); setConfirmCancel(false) }}
               className="w-full text-left px-4 py-3 border-b hover:bg-white/5 transition-colors"
               style={{ borderColor: 'var(--border)', background: selected?.id === job.id ? 'var(--surface-2)' : 'transparent' }}>
               <div className="flex items-center justify-between mb-1">
@@ -329,6 +340,27 @@ export default function JobsPage() {
                 <CheckCircle size={14} className="inline mr-1" />Mark Complete
               </button>
             )}
+            {(selected.status === 'scheduled' || selected.status === 'in_progress') && (
+              confirmCancel ? (
+                <div className="flex gap-2">
+                  <button onClick={() => cancelJob(selected)}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-red-600 hover:bg-red-700 text-white transition-colors">
+                    Yes, Cancel Job
+                  </button>
+                  <button onClick={() => setConfirmCancel(false)}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-medium hover:bg-white/5 transition-colors"
+                    style={{ border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                    Keep Job
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmCancel(true)}
+                  className="w-full py-2 rounded-xl text-sm transition-colors hover:bg-red-500/10 flex items-center justify-center gap-1.5"
+                  style={{ border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                  <Ban size={13} />Cancel Job
+                </button>
+              )
+            )}
             {selected.status === 'completed' && !selected.invoice_id && (
               <button onClick={() => generateInvoice(selected)}
                 className="w-full py-2.5 rounded-xl text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors">
@@ -359,13 +391,38 @@ export default function JobsPage() {
             <div className="p-5 space-y-3">
               <div>
                 <label className="text-xs mb-1 block" style={{ color: 'var(--text-secondary)' }}>Customer</label>
-                <select value={bookForm.contact_id} onChange={e => {
-                  const c = contacts.find(x => x.id === e.target.value)
-                  setBookForm(p => ({ ...p, contact_id: e.target.value, address: c?.address ?? '', city: c?.city ?? '', state: c?.state ?? 'MO', zip: c?.zip ?? '', recurring_frequency: c?.recurring_frequency ?? 'one_time' }))
-                }}>
-                  <option value="">Select customer…</option>
-                  {contacts.map(c => <option key={c.id} value={c.id}>{c.first_name} {c.last_name} — {c.phone}</option>)}
-                </select>
+                {bookForm.contact_id ? (
+                  <div className="flex items-center justify-between px-3 py-2 rounded-lg text-sm"
+                    style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                    <span>{contacts.find(c => c.id === bookForm.contact_id)?.first_name} {contacts.find(c => c.id === bookForm.contact_id)?.last_name}</span>
+                    <button onClick={() => { setBookForm(p => ({ ...p, contact_id: '', address: '', city: '', zip: '' })); setContactSearch('') }}>
+                      <X size={13} style={{ color: 'var(--text-secondary)' }} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-secondary)' }} />
+                    <input placeholder="Search contacts…" value={contactSearch} onChange={e => setContactSearch(e.target.value)} style={{ paddingLeft: '28px' }} />
+                    {contactSearch && (
+                      <div className="absolute top-full left-0 right-0 z-20 rounded-lg mt-1 max-h-48 overflow-y-auto shadow-lg"
+                        style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                        {contacts.filter(c => `${c.first_name} ${c.last_name} ${c.phone}`.toLowerCase().includes(contactSearch.toLowerCase())).length === 0 ? (
+                          <div className="px-3 py-2 text-xs" style={{ color: 'var(--text-secondary)' }}>No contacts found</div>
+                        ) : contacts.filter(c => `${c.first_name} ${c.last_name} ${c.phone}`.toLowerCase().includes(contactSearch.toLowerCase())).map(c => (
+                          <button key={c.id} className="w-full text-left px-3 py-2 text-sm hover:bg-white/5 transition-colors border-b last:border-0"
+                            style={{ borderColor: 'var(--border)' }}
+                            onClick={() => {
+                              setBookForm(p => ({ ...p, contact_id: c.id, address: c.address, city: c.city, state: c.state ?? 'MO', zip: c.zip, recurring_frequency: c.recurring_frequency }))
+                              setContactSearch('')
+                            }}>
+                            <div>{c.first_name} {c.last_name}</div>
+                            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{c.phone} · {c.address}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -391,7 +448,10 @@ export default function JobsPage() {
                 </div>
                 <div>
                   <label className="text-xs mb-1 block" style={{ color: 'var(--text-secondary)' }}>State</label>
-                  <input placeholder="MO" value={bookForm.state} onChange={e => setBookForm(p => ({ ...p, state: e.target.value }))} />
+                  <select value={bookForm.state} onChange={e => setBookForm(p => ({ ...p, state: e.target.value }))}>
+                    <option value="MO">Missouri (MO)</option>
+                    <option value="IL">Illinois (IL)</option>
+                  </select>
                 </div>
                 <div>
                   <label className="text-xs mb-1 block" style={{ color: 'var(--text-secondary)' }}>Zip</label>
