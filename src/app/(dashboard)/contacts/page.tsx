@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { Plus, Search, Phone, MapPin, RefreshCw, DollarSign, X, Pencil, Trash2 } from 'lucide-react'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { formatCurrency, formatDate, calcNextServiceDate } from '@/lib/utils'
 import { createClient } from '@/lib/supabase-browser'
 import type { Contact, RecurringFrequency } from '@/lib/types'
 
@@ -14,14 +14,6 @@ const RECURRING_COLORS: Record<RecurringFrequency, string> = {
 
 const BLANK = { first_name: '', last_name: '', email: '', phone: '', address: '', city: '', state: 'MO', zip: '', notes: '', recurring_frequency: 'one_time' as RecurringFrequency }
 
-function calcNextServiceDate(from: string, freq: RecurringFrequency): string | null {
-  if (freq === 'one_time') return null
-  const d = new Date(from)
-  if (freq === 'quarterly') d.setMonth(d.getMonth() + 3)
-  else if (freq === 'biannual') d.setMonth(d.getMonth() + 6)
-  else d.setFullYear(d.getFullYear() + 1)
-  return d.toISOString().slice(0, 10)
-}
 
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([])
@@ -45,13 +37,22 @@ export default function ContactsPage() {
       if (data) {
         setContacts(data as Contact[])
         const today = new Date().toISOString().slice(0, 10)
-        const recurring = (data as Contact[]).filter(c => c.recurring_frequency !== 'one_time' && c.next_service_date && c.next_service_date > today)
+        const recurring = (data as Contact[]).filter(c => c.recurring_frequency !== 'one_time')
         for (const c of recurring) {
+          let nextDate = c.next_service_date
+          if (!nextDate) {
+            const { data: lastJob } = await supabase.from('jobs').select('scheduled_date').eq('contact_id', c.id).order('scheduled_date', { ascending: false }).limit(1).single()
+            if (lastJob?.scheduled_date) {
+              nextDate = calcNextServiceDate(lastJob.scheduled_date, c.recurring_frequency)
+              if (nextDate) await supabase.from('contacts').update({ next_service_date: nextDate }).eq('id', c.id)
+            }
+          }
+          if (!nextDate || nextDate <= today) continue
           const { data: fut } = await supabase.from('jobs').select('id').eq('contact_id', c.id).eq('status', 'scheduled').gt('scheduled_date', today).limit(1)
           if (!fut || fut.length === 0) {
             await supabase.from('jobs').insert({
               contact_id: c.id, address: c.address, city: c.city, state: c.state, zip: c.zip,
-              scheduled_date: c.next_service_date, arrival_time: '09:00',
+              scheduled_date: nextDate, arrival_time: '09:00',
               services: [], total_price: 0, status: 'scheduled', notes: null,
             })
           }

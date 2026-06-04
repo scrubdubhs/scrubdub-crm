@@ -2,7 +2,7 @@ import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { format, formatDistanceToNow, parseISO } from 'date-fns'
 import { PIPELINE_STAGES, DOOR_STATUSES, LEAD_SOURCES } from './constants'
-import type { PipelineStage, LeadSource, DoorStatus } from './types'
+import type { PipelineStage, LeadSource, DoorStatus, RecurringFrequency } from './types'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -52,6 +52,15 @@ export function applyTextTemplate(template: string, vars: Record<string, string>
     (t, [k, v]) => t.replaceAll(`[${k}]`, v),
     template
   )
+}
+
+export function calcNextServiceDate(from: string, freq: RecurringFrequency): string | null {
+  if (freq === 'one_time') return null
+  const d = new Date(from)
+  if (freq === 'quarterly') d.setMonth(d.getMonth() + 3)
+  else if (freq === 'biannual') d.setMonth(d.getMonth() + 6)
+  else d.setFullYear(d.getFullYear() + 1)
+  return d.toISOString().slice(0, 10)
 }
 
 export function calcBundleDiscount(serviceCount: number, subtotal: number) {

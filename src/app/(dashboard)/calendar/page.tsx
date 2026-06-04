@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Clock, MapPin, Copy, Pencil, Check, X } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, parseISO } from 'date-fns'
-import { formatCurrency, formatTime, applyTextTemplate } from '@/lib/utils'
+import { formatCurrency, formatTime, applyTextTemplate, calcNextServiceDate } from '@/lib/utils'
 import { TEXT_TEMPLATES } from '@/lib/constants'
 import { createClient } from '@/lib/supabase-browser'
 
@@ -33,12 +33,20 @@ export default function CalendarPage() {
       const { data: contacts } = await supabase.from('contacts').select('id, address, city, state, zip, recurring_frequency, next_service_date').neq('recurring_frequency', 'one_time')
       if (contacts) {
         for (const c of contacts) {
-          if (!c.next_service_date || c.next_service_date <= today) continue
+          let nextDate = c.next_service_date
+          if (!nextDate) {
+            const { data: lastJob } = await supabase.from('jobs').select('scheduled_date').eq('contact_id', c.id).order('scheduled_date', { ascending: false }).limit(1).single()
+            if (lastJob?.scheduled_date) {
+              nextDate = calcNextServiceDate(lastJob.scheduled_date, c.recurring_frequency)
+              if (nextDate) await supabase.from('contacts').update({ next_service_date: nextDate }).eq('id', c.id)
+            }
+          }
+          if (!nextDate || nextDate <= today) continue
           const { data: fut } = await supabase.from('jobs').select('id').eq('contact_id', c.id).eq('status', 'scheduled').gt('scheduled_date', today).limit(1)
           if (!fut || fut.length === 0) {
             await supabase.from('jobs').insert({
               contact_id: c.id, address: c.address, city: c.city, state: c.state, zip: c.zip,
-              scheduled_date: c.next_service_date, arrival_time: '09:00',
+              scheduled_date: nextDate, arrival_time: '09:00',
               services: [], total_price: 0, status: 'scheduled', notes: null,
             })
           }
