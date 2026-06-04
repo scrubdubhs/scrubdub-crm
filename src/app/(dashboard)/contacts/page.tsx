@@ -39,21 +39,24 @@ export default function ContactsPage() {
         const today = new Date().toISOString().slice(0, 10)
         const recurring = (data as Contact[]).filter(c => c.recurring_frequency !== 'one_time')
         for (const c of recurring) {
+          const { data: lastJob } = await supabase.from('jobs').select('scheduled_date, arrival_time, services, total_price, address, city, state, zip').eq('contact_id', c.id).order('scheduled_date', { ascending: false }).limit(1).single()
           let nextDate = c.next_service_date
-          if (!nextDate) {
-            const { data: lastJob } = await supabase.from('jobs').select('scheduled_date').eq('contact_id', c.id).order('scheduled_date', { ascending: false }).limit(1).single()
-            if (lastJob?.scheduled_date) {
-              nextDate = calcNextServiceDate(lastJob.scheduled_date, c.recurring_frequency)
-              if (nextDate) await supabase.from('contacts').update({ next_service_date: nextDate }).eq('id', c.id)
-            }
+          if (!nextDate && lastJob?.scheduled_date) {
+            nextDate = calcNextServiceDate(lastJob.scheduled_date, c.recurring_frequency)
+            if (nextDate) await supabase.from('contacts').update({ next_service_date: nextDate }).eq('id', c.id)
           }
           if (!nextDate || nextDate <= today) continue
           const { data: fut } = await supabase.from('jobs').select('id').eq('contact_id', c.id).eq('status', 'scheduled').gt('scheduled_date', today).limit(1)
           if (!fut || fut.length === 0) {
             await supabase.from('jobs').insert({
-              contact_id: c.id, address: c.address, city: c.city, state: c.state, zip: c.zip,
-              scheduled_date: nextDate, arrival_time: '09:00',
-              services: [], total_price: 0, status: 'scheduled', notes: null,
+              contact_id: c.id,
+              address: lastJob?.address ?? c.address, city: lastJob?.city ?? c.city,
+              state: lastJob?.state ?? c.state, zip: lastJob?.zip ?? c.zip,
+              scheduled_date: nextDate,
+              arrival_time: lastJob?.arrival_time ?? '09:00',
+              services: lastJob?.services ?? [],
+              total_price: lastJob?.total_price ?? 0,
+              status: 'scheduled', notes: null,
             })
           }
         }
