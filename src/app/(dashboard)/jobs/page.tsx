@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { Camera, CheckCircle, Clock, MapPin, FileText, Plus, X, Pencil, Check, Search, Ban } from 'lucide-react'
 import { formatDate, formatTime, formatCurrency } from '@/lib/utils'
 import { createClient } from '@/lib/supabase-browser'
-import type { Job, Contact, RecurringFrequency } from '@/lib/types'
+import type { Job, Contact, RecurringFrequency, ServiceType } from '@/lib/types'
 
 const RECURRING_LABELS: Record<RecurringFrequency, string> = {
   one_time: 'One Time',
@@ -43,6 +43,9 @@ export default function JobsPage() {
   const [rescheduleSaving, setRescheduleSaving] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [contactSearch, setContactSearch] = useState('')
+  const [editJobMode, setEditJobMode] = useState(false)
+  const [editJobForm, setEditJobForm] = useState({ services: [] as ServiceType[], total_price: '', notes: '', address: '', city: '', state: 'MO', zip: '' })
+  const [editJobSaving, setEditJobSaving] = useState(false)
   const [bookForm, setBookForm] = useState({
     contact_id: '',
     address: '',
@@ -106,6 +109,41 @@ export default function JobsPage() {
     setShowBook(false)
     setBookForm({ contact_id: '', address: '', city: '', state: 'MO', zip: '', scheduled_date: '', arrival_time: '', services: [], total_price: '', notes: '', recurring_frequency: 'one_time' })
     setSaving(false)
+  }
+
+  function startEditJob() {
+    if (!selected) return
+    setEditJobForm({
+      services: selected.services as ServiceType[],
+      total_price: String(selected.total_price),
+      notes: selected.notes ?? '',
+      address: selected.address,
+      city: selected.city,
+      state: selected.state,
+      zip: selected.zip,
+    })
+    setEditJobMode(true)
+  }
+
+  async function saveJobEdit() {
+    if (!selected || !editJobForm.total_price) return
+    setEditJobSaving(true)
+    const supabase = createClient()
+    const updates = {
+      services: editJobForm.services,
+      total_price: Number(editJobForm.total_price),
+      notes: editJobForm.notes || null,
+      address: editJobForm.address,
+      city: editJobForm.city,
+      state: editJobForm.state,
+      zip: editJobForm.zip,
+    }
+    await supabase.from('jobs').update(updates).eq('id', selected.id)
+    const updated = { ...selected, ...updates }
+    setJobs(prev => prev.map(j => j.id === selected.id ? updated : j))
+    setSelected(updated)
+    setEditJobMode(false)
+    setEditJobSaving(false)
   }
 
   async function cancelJob(job: JobWithContact) {
@@ -257,9 +295,17 @@ export default function JobsPage() {
                   <MapPin size={12} />{selected.address}, {selected.city}, {selected.state} {selected.zip}
                 </div>
               </div>
-              <div className="text-right">
+              <div className="text-right flex flex-col items-end gap-1">
                 <div className="text-2xl font-bold text-blue-400">{formatCurrency(selected.total_price)}</div>
-                <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLES[selected.status]}`}>{selected.status}</span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_STYLES[selected.status]}`}>{selected.status}</span>
+                  {selected.status !== 'cancelled' && (
+                    <button onClick={startEditJob} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors" title="Edit job details"
+                      style={{ color: 'var(--text-secondary)' }}>
+                      <Pencil size={13} />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -496,6 +542,73 @@ export default function JobsPage() {
                 className="w-full py-2.5 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50">
                 {saving ? 'Booking…' : 'Book Job'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Job Modal */}
+      {editJobMode && selected && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="rounded-xl w-full max-w-lg" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+            <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: 'var(--border)' }}>
+              <div className="font-semibold">Edit Job Details</div>
+              <button onClick={() => setEditJobMode(false)}><X size={16} style={{ color: 'var(--text-secondary)' }} /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--text-secondary)' }}>Services</label>
+                <div className="flex gap-2">
+                  {(['pressure_washing', 'soft_washing', 'window_cleaning'] as const).map(s => (
+                    <button key={s} type="button"
+                      onClick={() => setEditJobForm(p => ({ ...p, services: p.services.includes(s) ? p.services.filter(x => x !== s) : [...p.services, s] }))}
+                      className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors border ${editJobForm.services.includes(s) ? 'bg-blue-600 border-blue-500 text-white' : 'border-dashed'}`}
+                      style={editJobForm.services.includes(s) ? {} : { borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
+                      {s === 'pressure_washing' ? 'Pressure Wash' : s === 'soft_washing' ? 'Soft Wash' : 'Windows'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--text-secondary)' }}>Total Price</label>
+                <input type="number" placeholder="$0.00" value={editJobForm.total_price} onChange={e => setEditJobForm(p => ({ ...p, total_price: e.target.value }))} />
+              </div>
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--text-secondary)' }}>Address</label>
+                <input placeholder="Address" value={editJobForm.address} onChange={e => setEditJobForm(p => ({ ...p, address: e.target.value }))} />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--text-secondary)' }}>City</label>
+                  <input placeholder="City" value={editJobForm.city} onChange={e => setEditJobForm(p => ({ ...p, city: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--text-secondary)' }}>State</label>
+                  <select value={editJobForm.state} onChange={e => setEditJobForm(p => ({ ...p, state: e.target.value }))}>
+                    <option value="MO">Missouri (MO)</option>
+                    <option value="IL">Illinois (IL)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs mb-1 block" style={{ color: 'var(--text-secondary)' }}>ZIP</label>
+                  <input placeholder="ZIP" value={editJobForm.zip} onChange={e => setEditJobForm(p => ({ ...p, zip: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs mb-1 block" style={{ color: 'var(--text-secondary)' }}>Notes</label>
+                <textarea placeholder="Any notes…" rows={2} value={editJobForm.notes} onChange={e => setEditJobForm(p => ({ ...p, notes: e.target.value }))} />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={saveJobEdit} disabled={editJobSaving}
+                  className="flex-1 py-2.5 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50">
+                  {editJobSaving ? 'Saving…' : 'Save Changes'}
+                </button>
+                <button onClick={() => setEditJobMode(false)}
+                  className="flex-1 py-2.5 rounded-lg text-sm font-medium hover:bg-white/5 transition-colors"
+                  style={{ border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>
