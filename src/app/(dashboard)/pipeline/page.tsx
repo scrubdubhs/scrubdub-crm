@@ -58,8 +58,7 @@ export default function PipelinePage() {
     const supabase = createClient()
     supabase.from('leads').select('*').order('created_at', { ascending: false }).then(({ data }) => {
       if (data) setLeads(data as Lead[])
-      setLoading(false)
-    })
+    }).catch(e => console.error('Pipeline load error:', e)).finally(() => setLoading(false))
   }, [])
 
   async function saveLead() {

@@ -7,6 +7,8 @@ import type { Job, Contact, RecurringFrequency, ServiceType } from '@/lib/types'
 
 const RECURRING_LABELS: Record<RecurringFrequency, string> = {
   one_time: 'One Time',
+  biweekly: 'Bi-Weekly (every 2 weeks)',
+  monthly: 'Monthly (every month)',
   quarterly: 'Quarterly (every 3 months)',
   biannual: 'Bi-Annual (every 6 months)',
   annual: 'Annual (once a year)',
@@ -15,9 +17,11 @@ const RECURRING_LABELS: Record<RecurringFrequency, string> = {
 function nextServiceDate(from: string, freq: RecurringFrequency): string | null {
   if (freq === 'one_time') return null
   const d = new Date(from)
-  if (freq === 'quarterly') d.setMonth(d.getMonth() + 3)
-  if (freq === 'biannual') d.setMonth(d.getMonth() + 6)
-  if (freq === 'annual') d.setFullYear(d.getFullYear() + 1)
+  if (freq === 'biweekly') d.setDate(d.getDate() + 14)
+  else if (freq === 'monthly') d.setMonth(d.getMonth() + 1)
+  else if (freq === 'quarterly') d.setMonth(d.getMonth() + 3)
+  else if (freq === 'biannual') d.setMonth(d.getMonth() + 6)
+  else d.setFullYear(d.getFullYear() + 1)
   return d.toISOString().slice(0, 10)
 }
 
@@ -63,10 +67,9 @@ export default function JobsPage() {
   useEffect(() => {
     const supabase = createClient()
     supabase.from('jobs').select('*, contacts(first_name, last_name)').order('scheduled_date', { ascending: false })
-      .then(({ data }) => {
-        if (data) setJobs(data as JobWithContact[])
-        setLoading(false)
-      })
+      .then(({ data }) => { if (data) setJobs(data as JobWithContact[]) })
+      .catch(e => console.error('Jobs load error:', e))
+      .finally(() => setLoading(false))
     supabase.from('contacts').select('*').order('first_name').then(({ data }) => {
       if (data) setContacts(data as Contact[])
     })

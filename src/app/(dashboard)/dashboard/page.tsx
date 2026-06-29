@@ -55,46 +55,51 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function load() {
-      const supabase = createClient()
-      const now = new Date()
-      const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString()
-      const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0).toISOString()
+      try {
+        const supabase = createClient()
+        const now = new Date()
+        const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+        const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString()
+        const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0).toISOString()
 
-      const [{ data: paidInv }, { data: leads }, { data: jobs }] = await Promise.all([
-        supabase.from('invoices').select('total, paid_at, created_at').eq('payment_status', 'paid'),
-        supabase.from('leads').select('stage, source, created_at'),
-        supabase.from('jobs').select('scheduled_date, total_price').eq('status', 'completed'),
-      ])
+        const [{ data: paidInv }, { data: leads }, { data: jobs }] = await Promise.all([
+          supabase.from('invoices').select('total, paid_at, created_at').eq('payment_status', 'paid'),
+          supabase.from('leads').select('stage, source, created_at'),
+          supabase.from('jobs').select('scheduled_date, total_price').eq('status', 'completed'),
+        ])
 
-      const totalRevenue = (paidInv ?? []).reduce((s, i) => s + i.total, 0)
-      const revenueThisMonth = (paidInv ?? []).filter(i => i.paid_at >= thisMonthStart).reduce((s, i) => s + i.total, 0)
-      const revenueLastMonth = (paidInv ?? []).filter(i => i.paid_at >= lastMonthStart && i.paid_at <= lastMonthEnd).reduce((s, i) => s + i.total, 0)
+        const totalRevenue = (paidInv ?? []).reduce((s, i) => s + i.total, 0)
+        const revenueThisMonth = (paidInv ?? []).filter(i => i.paid_at >= thisMonthStart).reduce((s, i) => s + i.total, 0)
+        const revenueLastMonth = (paidInv ?? []).filter(i => i.paid_at >= lastMonthStart && i.paid_at <= lastMonthEnd).reduce((s, i) => s + i.total, 0)
 
-      const totalLeads = (leads ?? []).length
-      const paidLeads = (leads ?? []).filter(l => l.stage === 'paid').length
-      const closeRate = totalLeads > 0 ? Math.round((paidLeads / totalLeads) * 100) : 0
+        const totalLeads = (leads ?? []).length
+        const paidLeads = (leads ?? []).filter(l => l.stage === 'paid').length
+        const closeRate = totalLeads > 0 ? Math.round((paidLeads / totalLeads) * 100) : 0
 
-      const jobsThisMonth = (jobs ?? []).filter(j => j.scheduled_date >= thisMonthStart.slice(0, 10)).length
-      const avgJobValue = jobs && jobs.length > 0 ? jobs.reduce((s, j) => s + j.total_price, 0) / jobs.length : 0
+        const jobsThisMonth = (jobs ?? []).filter(j => j.scheduled_date >= thisMonthStart.slice(0, 10)).length
+        const avgJobValue = jobs && jobs.length > 0 ? jobs.reduce((s, j) => s + j.total_price, 0) / jobs.length : 0
 
-      const pipeline_counts: Record<string, number> = {}
-      for (const l of (leads ?? [])) pipeline_counts[l.stage] = (pipeline_counts[l.stage] ?? 0) + 1
+        const pipeline_counts: Record<string, number> = {}
+        for (const l of (leads ?? [])) pipeline_counts[l.stage] = (pipeline_counts[l.stage] ?? 0) + 1
 
-      const leads_by_source: Record<string, number> = {}
-      for (const l of (leads ?? [])) leads_by_source[l.source] = (leads_by_source[l.source] ?? 0) + 1
+        const leads_by_source: Record<string, number> = {}
+        for (const l of (leads ?? [])) leads_by_source[l.source] = (leads_by_source[l.source] ?? 0) + 1
 
-      const monthly_revenue: { month: string; revenue: number }[] = []
-      for (let i = 5; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-        const start = d.toISOString()
-        const end = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString()
-        const rev = (paidInv ?? []).filter(inv => inv.paid_at >= start && inv.paid_at <= end).reduce((s, inv) => s + inv.total, 0)
-        monthly_revenue.push({ month: d.toLocaleString('default', { month: 'short' }), revenue: rev })
+        const monthly_revenue: { month: string; revenue: number }[] = []
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+          const start = d.toISOString()
+          const end = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString()
+          const rev = (paidInv ?? []).filter(inv => inv.paid_at >= start && inv.paid_at <= end).reduce((s, inv) => s + inv.total, 0)
+          monthly_revenue.push({ month: d.toLocaleString('default', { month: 'short' }), revenue: rev })
+        }
+
+        setStats({ total_revenue: totalRevenue, revenue_this_month: revenueThisMonth, revenue_last_month: revenueLastMonth, total_leads: totalLeads, close_rate: closeRate, avg_job_value: avgJobValue, jobs_this_month: jobsThisMonth, pipeline_counts, leads_by_source, monthly_revenue })
+      } catch (e) {
+        console.error('Dashboard load error:', e)
+      } finally {
+        setLoading(false)
       }
-
-      setStats({ total_revenue: totalRevenue, revenue_this_month: revenueThisMonth, revenue_last_month: revenueLastMonth, total_leads: totalLeads, close_rate: closeRate, avg_job_value: avgJobValue, jobs_this_month: jobsThisMonth, pipeline_counts, leads_by_source, monthly_revenue })
-      setLoading(false)
     }
     load()
   }, [])

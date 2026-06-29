@@ -6,10 +6,10 @@ import { createClient } from '@/lib/supabase-browser'
 import type { Contact, RecurringFrequency } from '@/lib/types'
 
 const RECURRING_LABELS: Record<RecurringFrequency, string> = {
-  one_time: 'One-Time', quarterly: 'Quarterly', biannual: 'Bi-Annual', annual: 'Annual'
+  one_time: 'One-Time', biweekly: 'Bi-Weekly', monthly: 'Monthly', quarterly: 'Quarterly', biannual: 'Bi-Annual', annual: 'Annual'
 }
 const RECURRING_COLORS: Record<RecurringFrequency, string> = {
-  one_time: 'text-gray-400', quarterly: 'text-blue-400', biannual: 'text-purple-400', annual: 'text-green-400'
+  one_time: 'text-gray-400', biweekly: 'text-pink-400', monthly: 'text-orange-400', quarterly: 'text-blue-400', biannual: 'text-purple-400', annual: 'text-green-400'
 }
 
 const BLANK = { first_name: '', last_name: '', email: '', phone: '', address: '', city: '', state: 'MO', zip: '', notes: '', recurring_frequency: 'one_time' as RecurringFrequency }
@@ -33,36 +33,43 @@ export default function ContactsPage() {
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.from('contacts').select('*').order('first_name').then(async ({ data }) => {
-      if (data) {
-        setContacts(data as Contact[])
-        const today = new Date().toISOString().slice(0, 10)
-        const recurring = (data as Contact[]).filter(c => c.recurring_frequency !== 'one_time')
-        for (const c of recurring) {
-          const { data: lastJob } = await supabase.from('jobs').select('scheduled_date, arrival_time, services, total_price, address, city, state, zip').eq('contact_id', c.id).order('scheduled_date', { ascending: false }).limit(1).single()
-          let nextDate = c.next_service_date
-          if (!nextDate && lastJob?.scheduled_date) {
-            nextDate = calcNextServiceDate(lastJob.scheduled_date, c.recurring_frequency)
-            if (nextDate) await supabase.from('contacts').update({ next_service_date: nextDate }).eq('id', c.id)
-          }
-          if (!nextDate || nextDate <= today) continue
-          const { data: fut } = await supabase.from('jobs').select('id').eq('contact_id', c.id).eq('status', 'scheduled').gt('scheduled_date', today).limit(1)
-          if (!fut || fut.length === 0) {
-            await supabase.from('jobs').insert({
-              contact_id: c.id,
-              address: lastJob?.address ?? c.address, city: lastJob?.city ?? c.city,
-              state: lastJob?.state ?? c.state, zip: lastJob?.zip ?? c.zip,
-              scheduled_date: nextDate,
-              arrival_time: lastJob?.arrival_time ?? '09:00',
-              services: lastJob?.services ?? [],
-              total_price: lastJob?.total_price ?? 0,
-              status: 'scheduled', notes: null,
-            })
+    async function load() {
+      try {
+        const { data } = await supabase.from('contacts').select('*').order('first_name')
+        if (data) {
+          setContacts(data as Contact[])
+          const today = new Date().toISOString().slice(0, 10)
+          const recurring = (data as Contact[]).filter(c => c.recurring_frequency !== 'one_time')
+          for (const c of recurring) {
+            const { data: lastJob } = await supabase.from('jobs').select('scheduled_date, arrival_time, services, total_price, address, city, state, zip').eq('contact_id', c.id).order('scheduled_date', { ascending: false }).limit(1).single()
+            let nextDate = c.next_service_date
+            if (!nextDate && lastJob?.scheduled_date) {
+              nextDate = calcNextServiceDate(lastJob.scheduled_date, c.recurring_frequency)
+              if (nextDate) await supabase.from('contacts').update({ next_service_date: nextDate }).eq('id', c.id)
+            }
+            if (!nextDate || nextDate <= today) continue
+            const { data: fut } = await supabase.from('jobs').select('id').eq('contact_id', c.id).eq('status', 'scheduled').gt('scheduled_date', today).limit(1)
+            if (!fut || fut.length === 0) {
+              await supabase.from('jobs').insert({
+                contact_id: c.id,
+                address: lastJob?.address ?? c.address, city: lastJob?.city ?? c.city,
+                state: lastJob?.state ?? c.state, zip: lastJob?.zip ?? c.zip,
+                scheduled_date: nextDate,
+                arrival_time: lastJob?.arrival_time ?? '09:00',
+                services: lastJob?.services ?? [],
+                total_price: lastJob?.total_price ?? 0,
+                status: 'scheduled', notes: null,
+              })
+            }
           }
         }
+      } catch (e) {
+        console.error('Contacts load error:', e)
+      } finally {
+        setLoading(false)
       }
-      setLoading(false)
-    })
+    }
+    load()
   }, [])
 
   async function saveContact() {
@@ -304,6 +311,8 @@ export default function ContactsPage() {
               <input placeholder="ZIP" className="col-span-2" value={editForm.zip} onChange={e => setEditForm(p => ({ ...p, zip: e.target.value }))} />
               <select className="col-span-2" value={editForm.recurring_frequency} onChange={e => setEditForm(p => ({ ...p, recurring_frequency: e.target.value as RecurringFrequency }))}>
                 <option value="one_time">One-Time</option>
+                <option value="biweekly">Bi-Weekly (every 2 weeks)</option>
+                <option value="monthly">Monthly Recurring</option>
                 <option value="quarterly">Quarterly Recurring</option>
                 <option value="biannual">Bi-Annual Recurring</option>
                 <option value="annual">Annual Recurring</option>
@@ -376,6 +385,8 @@ export default function ContactsPage() {
               <input placeholder="ZIP" className="col-span-2" value={form.zip} onChange={e => setForm(p => ({ ...p, zip: e.target.value }))} />
               <select className="col-span-2" value={form.recurring_frequency} onChange={e => setForm(p => ({ ...p, recurring_frequency: e.target.value as RecurringFrequency }))}>
                 <option value="one_time">One-Time</option>
+                <option value="biweekly">Bi-Weekly (every 2 weeks)</option>
+                <option value="monthly">Monthly Recurring</option>
                 <option value="quarterly">Quarterly Recurring</option>
                 <option value="biannual">Bi-Annual Recurring</option>
                 <option value="annual">Annual Recurring</option>
