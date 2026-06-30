@@ -25,10 +25,17 @@ export default function InvoicesPage() {
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.from('invoices').select('*, contacts(first_name, last_name, email)').order('created_at', { ascending: false })
-      .then(({ data }) => { if (data) setInvoices(data as InvoiceWithContact[]) })
-      .catch(e => console.error('Invoices load error:', e))
-      .finally(() => setLoading(false))
+    async function load() {
+      try {
+        const { data } = await supabase.from('invoices').select('*, contacts(first_name, last_name, email)').order('created_at', { ascending: false })
+        if (data) setInvoices(data as InvoiceWithContact[])
+      } catch (e) {
+        console.error('Invoices load error:', e)
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
   }, [])
 
   async function markPaid(method: PaymentMethod) {

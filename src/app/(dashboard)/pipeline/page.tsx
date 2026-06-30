@@ -56,9 +56,17 @@ export default function PipelinePage() {
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.from('leads').select('*').order('created_at', { ascending: false }).then(({ data }) => {
-      if (data) setLeads(data as Lead[])
-    }).catch(e => console.error('Pipeline load error:', e)).finally(() => setLoading(false))
+    async function load() {
+      try {
+        const { data } = await supabase.from('leads').select('*').order('created_at', { ascending: false })
+        if (data) setLeads(data as Lead[])
+      } catch (e) {
+        console.error('Pipeline load error:', e)
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
   }, [])
 
   async function saveLead() {

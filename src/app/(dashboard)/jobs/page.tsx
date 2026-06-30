@@ -66,10 +66,17 @@ export default function JobsPage() {
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.from('jobs').select('*, contacts(first_name, last_name)').order('scheduled_date', { ascending: false })
-      .then(({ data }) => { if (data) setJobs(data as JobWithContact[]) })
-      .catch(e => console.error('Jobs load error:', e))
-      .finally(() => setLoading(false))
+    async function load() {
+      try {
+        const { data } = await supabase.from('jobs').select('*, contacts(first_name, last_name)').order('scheduled_date', { ascending: false })
+        if (data) setJobs(data as JobWithContact[])
+      } catch (e) {
+        console.error('Jobs load error:', e)
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
     supabase.from('contacts').select('*').order('first_name').then(({ data }) => {
       if (data) setContacts(data as Contact[])
     })
