@@ -17,7 +17,7 @@ export type ServiceType = 'pressure_washing' | 'soft_washing' | 'window_cleaning
 
 export type PaymentMethod = 'stripe' | 'cash' | 'check' | 'unpaid'
 
-export type RecurringFrequency = 'one_time' | 'quarterly' | 'biannual' | 'annual'
+export type RecurringFrequency = 'one_time' | 'biweekly' | 'monthly' | 'quarterly' | 'biannual' | 'annual'
 
 export type DoorStatus = 'not_home' | 'not_interested' | 'interested' | 'quoted' | 'booked'
 

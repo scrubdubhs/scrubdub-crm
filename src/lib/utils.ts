@@ -57,7 +57,9 @@ export function applyTextTemplate(template: string, vars: Record<string, string>
 export function calcNextServiceDate(from: string, freq: RecurringFrequency): string | null {
   if (freq === 'one_time') return null
   const d = new Date(from)
-  if (freq === 'quarterly') d.setMonth(d.getMonth() + 3)
+  if (freq === 'biweekly') d.setDate(d.getDate() + 14)
+  else if (freq === 'monthly') d.setMonth(d.getMonth() + 1)
+  else if (freq === 'quarterly') d.setMonth(d.getMonth() + 3)
   else if (freq === 'biannual') d.setMonth(d.getMonth() + 6)
   else d.setFullYear(d.getFullYear() + 1)
   return d.toISOString().slice(0, 10)
